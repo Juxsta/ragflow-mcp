@@ -122,30 +122,31 @@ class TestDocumentTools:
 
     @pytest.mark.asyncio
     async def test_parse_document_async_returns_task_id(self, mock_connector):
-        """Test 4: Parse document (async) returns task_id."""
+        """Test 4: Parse document (async) returns status."""
         from src.tools.documents import ragflow_parse_document
 
         # Mock parse document response
         mock_connector.parse_document.return_value = {
-            "task_id": "task-abc123",
             "status": "processing",
             "document_id": "doc-123",
+            "dataset_id": "dataset-abc",
         }
 
         with patch("src.tools.documents.get_connector", return_value=mock_connector):
             result = await ragflow_parse_document(
+                dataset_id="dataset-abc",
                 document_id="doc-123",
                 chunk_method="naive",
             )
 
-        # Verify task_id is returned immediately
-        assert "task_id" in result
-        assert result["task_id"] == "task-abc123"
+        # Verify status is returned immediately
         assert result["status"] == "processing"
+        assert result["document_id"] == "doc-123"
 
         # Verify parse was called with correct parameters
         mock_connector.parse_document.assert_called_once()
         call_kwargs = mock_connector.parse_document.call_args[1]
+        assert call_kwargs.get("dataset_id") == "dataset-abc"
         assert call_kwargs.get("document_id") == "doc-123"
         assert call_kwargs.get("chunk_method") == "naive"
 
@@ -154,31 +155,34 @@ class TestDocumentTools:
         """Test 5: Parse document (sync) waits for completion."""
         from src.tools.documents import ragflow_parse_document_sync
 
-        # Mock parse and status responses
+        # Mock parse response
         mock_connector.parse_document.return_value = {
-            "task_id": "task-def456",
             "status": "processing",
             "document_id": "doc-456",
+            "dataset_id": "dataset-xyz",
         }
 
-        # Simulate status progression: processing -> completed
-        mock_connector.get_parse_status.side_effect = [
-            {"task_id": "task-def456", "status": "processing", "progress": 50},
-            {"task_id": "task-def456", "status": "completed", "progress": 100},
+        # Simulate document status progression: RUNNING -> DONE
+        mock_connector.list_documents.side_effect = [
+            {"documents": [{"id": "doc-456", "run": "RUNNING", "progress": 0.5}]},
+            {"documents": [{"id": "doc-456", "run": "DONE", "progress": 1.0}]},
         ]
 
         with patch("src.tools.documents.get_connector", return_value=mock_connector):
             result = await ragflow_parse_document_sync(
+                dataset_id="dataset-xyz",
                 document_id="doc-456",
                 poll_interval=0.01,  # Short interval for testing
             )
 
         # Verify completion status is returned
         assert result["status"] == "completed"
-        assert result["progress"] == 100
+        assert result["progress"] == 1.0
+        assert result["document_id"] == "doc-456"
+        assert result["dataset_id"] == "dataset-xyz"
 
         # Verify polling occurred
-        assert mock_connector.get_parse_status.call_count >= 1
+        assert mock_connector.list_documents.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_download_document_returns_content(self, mock_connector):

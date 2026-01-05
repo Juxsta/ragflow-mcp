@@ -118,16 +118,17 @@ async def ragflow_list_documents(
 
 
 async def ragflow_parse_document(
+    dataset_id: str,
     document_id: str,
     chunk_method: str | None = None,
 ) -> dict[str, Any]:
     """Trigger parsing of a document (async).
 
-    Initiates document parsing and returns immediately with a task ID
-    for tracking progress. Use ragflow_parse_document_sync for blocking
-    behavior that waits for completion.
+    Initiates document parsing and returns immediately.
+    Use ragflow_parse_document_sync for blocking behavior.
 
     Args:
+        dataset_id: ID of the dataset containing the document. Required.
         document_id: ID of the document to parse. Required.
         chunk_method: Optional override for the chunking method.
             Options: "naive" (simple splitting), "qa" (Q&A pairs),
@@ -136,18 +137,18 @@ async def ragflow_parse_document(
 
     Returns:
         Dictionary containing:
-            - task_id: ID for tracking parsing progress
             - status: Current status (typically "processing")
             - document_id: The document being parsed
+            - dataset_id: The dataset containing the document
 
     Note:
         This is an asynchronous operation. The document is not immediately
-        available for retrieval. Poll the task status or use the sync
-        version to wait for completion.
+        available for retrieval. Check document status to monitor progress.
     """
     connector = get_connector()
 
     result = await connector.parse_document(
+        dataset_id=dataset_id,
         document_id=document_id,
         chunk_method=chunk_method,
     )
@@ -156,6 +157,7 @@ async def ragflow_parse_document(
 
 
 async def ragflow_parse_document_sync(
+    dataset_id: str,
     document_id: str,
     chunk_method: str | None = None,
     poll_interval: float = 2.0,
@@ -163,11 +165,12 @@ async def ragflow_parse_document_sync(
 ) -> dict[str, Any]:
     """Trigger parsing of a document and wait for completion.
 
-    Initiates document parsing and polls for completion, providing
-    progress updates. This is a blocking operation that waits until
-    parsing is complete, fails, or times out.
+    Initiates document parsing and polls for completion by checking
+    the document's run status. This is a blocking operation that waits
+    until parsing is complete, fails, or times out.
 
     Args:
+        dataset_id: ID of the dataset containing the document. Required.
         document_id: ID of the document to parse. Required.
         chunk_method: Optional override for the chunking method.
             Options: "naive", "qa", "manual".
@@ -177,10 +180,10 @@ async def ragflow_parse_document_sync(
 
     Returns:
         Dictionary containing:
-            - task_id: The parsing task ID
             - status: Final status ("completed" or "failed")
-            - progress: Final progress (100 if completed)
+            - progress: Final progress (1.0 if completed)
             - document_id: The document that was parsed
+            - dataset_id: The dataset containing the document
 
     Raises:
         TimeoutError: If parsing does not complete within the timeout period.
@@ -188,32 +191,44 @@ async def ragflow_parse_document_sync(
     connector = get_connector()
 
     # Start parsing
-    parse_result = await connector.parse_document(
+    await connector.parse_document(
+        dataset_id=dataset_id,
         document_id=document_id,
         chunk_method=chunk_method,
     )
 
-    task_id = parse_result.get("task_id")
-    if not task_id:
-        # Parsing might have completed immediately or returned inline
-        return parse_result
-
-    # Poll for completion
+    # Poll for completion by checking document status
     elapsed = 0.0
     while elapsed < timeout:
-        status_result = await connector.get_parse_status(task_id)
-        status = status_result.get("status", "")
+        docs = await connector.list_documents(dataset_id=dataset_id)
+        doc = next((d for d in docs.get("documents", []) if d["id"] == document_id), None)
 
-        if status in ("completed", "failed"):
-            status_result["document_id"] = document_id
-            return status_result
+        if doc:
+            run_status = doc.get("run", "")
+            progress = doc.get("progress", 0)
+
+            if run_status == "DONE" or progress >= 1.0:
+                return {
+                    "status": "completed",
+                    "progress": progress,
+                    "document_id": document_id,
+                    "dataset_id": dataset_id,
+                }
+            elif run_status == "FAIL":
+                return {
+                    "status": "failed",
+                    "progress": progress,
+                    "document_id": document_id,
+                    "dataset_id": dataset_id,
+                    "error": doc.get("progress_msg", "Parsing failed"),
+                }
 
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
 
     raise TimeoutError(
         f"Parsing did not complete within {timeout} seconds. "
-        f"Task ID: {task_id}, Last status: {status_result.get('status')}"
+        f"Document ID: {document_id}, Dataset ID: {dataset_id}"
     )
 
 
@@ -390,28 +405,32 @@ def register_document_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def ragflow_parse_document_tool(
+        dataset_id: str,
         document_id: str,
         chunk_method: str | None = None,
     ) -> dict[str, Any]:
         """Parse a document asynchronously.
 
-        Triggers document parsing and returns immediately with a task_id.
+        Triggers document parsing and returns immediately.
         Use ragflow_parse_document_sync_tool to wait for completion.
 
         Args:
+            dataset_id: Dataset ID containing the document. Required.
             document_id: Document ID to parse. Required.
             chunk_method: Chunking method override ("naive", "qa", "manual").
 
         Returns:
-            Dictionary with task_id, status, document_id.
+            Dictionary with status, document_id, dataset_id.
         """
         return await ragflow_parse_document(
+            dataset_id=dataset_id,
             document_id=document_id,
             chunk_method=chunk_method,
         )
 
     @mcp.tool()
     async def ragflow_parse_document_sync_tool(
+        dataset_id: str,
         document_id: str,
         chunk_method: str | None = None,
         poll_interval: float = 2.0,
@@ -423,15 +442,17 @@ def register_document_tools(mcp: FastMCP) -> None:
         Use this when you need to wait for parsing to finish.
 
         Args:
+            dataset_id: Dataset ID containing the document. Required.
             document_id: Document ID to parse. Required.
             chunk_method: Chunking method override ("naive", "qa", "manual").
             poll_interval: Seconds between status checks. Default: 2.0.
             timeout: Max seconds to wait. Default: 600.0.
 
         Returns:
-            Dictionary with task_id, final status, progress.
+            Dictionary with status, progress, document_id, dataset_id.
         """
         return await ragflow_parse_document_sync(
+            dataset_id=dataset_id,
             document_id=document_id,
             chunk_method=chunk_method,
             poll_interval=poll_interval,

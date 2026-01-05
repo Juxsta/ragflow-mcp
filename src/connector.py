@@ -810,18 +810,19 @@ class RAGFlowConnector:
 
     async def parse_document(
         self,
+        dataset_id: str,
         document_id: str,
         chunk_method: str | None = None,
     ) -> dict[str, Any]:
         """Trigger parsing of a document (async).
 
         Args:
+            dataset_id: ID of the dataset containing the document (required).
             document_id: ID of the document to parse (required).
             chunk_method: Optional chunk method override.
 
         Returns:
             Dictionary containing:
-                - task_id: ID for tracking parsing progress
                 - status: Current status (e.g., "processing")
                 - document_id: The document being parsed
 
@@ -829,25 +830,21 @@ class RAGFlowConnector:
             RAGFlowConnectionError: If connection fails.
             RAGFlowAPIError: If API returns an error.
         """
-        payload: dict[str, Any] = {}
-        if chunk_method is not None:
-            payload["chunk_method"] = chunk_method
+        payload: dict[str, Any] = {"document_ids": [document_id]}
 
-        logger.debug("Parsing document %s: %s", document_id, payload)
+        logger.debug("Parsing document %s in dataset %s", document_id, dataset_id)
 
         response = await self.post(
-            f"/documents/{document_id}/parse",
-            json=payload if payload else None,
+            f"/datasets/{dataset_id}/chunks",
+            json=payload,
         )
 
-        # Extract data from response
-        data = response.get("data", {})
-
-        # Ensure document_id is included in response
-        if "document_id" not in data:
-            data["document_id"] = document_id
-
-        return data
+        # Return success with document info
+        return {
+            "document_id": document_id,
+            "dataset_id": dataset_id,
+            "status": "processing",
+        }
 
     async def get_parse_status(
         self,

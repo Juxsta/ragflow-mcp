@@ -69,15 +69,15 @@ class TestIntegrationWorkflows:
             "task_id": "task-parse-001",
             "status": "processing",
             "document_id": document["id"],
+            "dataset_id": dataset["id"],
         })
-        mock_connector.get_parse_status = AsyncMock(return_value={
-            "task_id": "task-parse-001",
-            "status": "completed",
-            "progress": 100,
+        mock_connector.list_documents = AsyncMock(return_value={
+            "documents": [{"id": document["id"], "run": "DONE", "progress": 1.0}]
         })
 
         with patch("src.tools.documents.get_connector", return_value=mock_connector):
             parse_result = await ragflow_parse_document_sync(
+                dataset_id=dataset["id"],
                 document_id=document["id"],
                 poll_interval=0.01,
             )
@@ -125,16 +125,19 @@ class TestIntegrationWorkflows:
             )
         assert document["id"] == "doc-chunk-test-001"
 
-        # Step 2: Parse document (async - returns task_id immediately)
+        # Step 2: Parse document (async - returns status immediately)
         mock_connector.parse_document = AsyncMock(return_value={
-            "task_id": "task-chunk-parse-001",
             "status": "processing",
             "document_id": document["id"],
+            "dataset_id": "dataset-001",
         })
 
         with patch("src.tools.documents.get_connector", return_value=mock_connector):
-            parse_result = await ragflow_parse_document(document_id=document["id"])
-        assert parse_result["task_id"] == "task-chunk-parse-001"
+            parse_result = await ragflow_parse_document(
+                dataset_id="dataset-001",
+                document_id=document["id"],
+            )
+        assert parse_result["status"] == "processing"
 
         # Step 3: List chunks (after parsing completes)
         mock_connector.list_chunks = AsyncMock(return_value={
