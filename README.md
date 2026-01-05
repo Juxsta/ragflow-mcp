@@ -17,13 +17,15 @@ A comprehensive Model Context Protocol (MCP) server for [RAGFlow](https://github
 ### Prerequisites
 
 - Python 3.10+
-- RAGFlow server running and accessible
+- RAGFlow server running and accessible (v0.16.0+ for core features)
 - RAGFlow API key
+
+> **Note:** GraphRAG and RAPTOR build APIs require RAGFlow v0.21.0 or later.
 
 ### Install from source
 
 ```bash
-git clone https://github.com/yourusername/ragflow-mcp.git
+git clone https://github.com/Juxsta/ragflow-mcp.git
 cd ragflow-mcp
 pip install -e .
 ```
