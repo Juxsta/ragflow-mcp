@@ -50,7 +50,7 @@ async def ragflow_build_graph(
 
 
 async def ragflow_graph_status(
-    task_id: str,
+    dataset_id: str,
 ) -> dict[str, Any]:
     """Check the status of a graph construction task.
 
@@ -58,18 +58,18 @@ async def ragflow_graph_status(
     Use this to monitor progress of long-running graph building operations.
 
     Args:
-        task_id: ID of the graph construction task. Required.
+        dataset_id: ID of the dataset to check graph status for. Required.
 
     Returns:
         Dictionary containing:
-            - task_id: The task ID
+            - dataset_id: The dataset ID
             - status: Current status (e.g., "processing", "completed", "failed")
             - progress: Progress percentage (0-100)
             - message: Status message
     """
     connector = get_connector()
 
-    result = await connector.get_graph_status(task_id=task_id)
+    result = await connector.get_graph_status(dataset_id=dataset_id)
 
     return result
 
@@ -173,7 +173,7 @@ async def ragflow_build_raptor(
 
 
 async def ragflow_raptor_status(
-    task_id: str,
+    dataset_id: str,
 ) -> dict[str, Any]:
     """Check the status of a RAPTOR construction task.
 
@@ -181,18 +181,18 @@ async def ragflow_raptor_status(
     Use this to monitor progress of long-running RAPTOR building operations.
 
     Args:
-        task_id: ID of the RAPTOR construction task. Required.
+        dataset_id: ID of the dataset to check RAPTOR status for. Required.
 
     Returns:
         Dictionary containing:
-            - task_id: The task ID
+            - dataset_id: The dataset ID
             - status: Current status (e.g., "processing", "completed", "failed")
             - progress: Progress percentage (0-100)
             - message: Status message
     """
     connector = get_connector()
 
-    result = await connector.get_raptor_status(task_id=task_id)
+    result = await connector.get_raptor_status(dataset_id=dataset_id)
 
     return result
 
@@ -223,19 +223,19 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def ragflow_graph_status_tool(
-        task_id: str,
+        dataset_id: str,
     ) -> dict[str, Any]:
         """Check status of a graph construction task.
 
         Polls construction progress for long-running operations.
 
         Args:
-            task_id: Task ID from ragflow_build_graph. Required.
+            dataset_id: Dataset ID to check graph status for. Required.
 
         Returns:
             Status with progress percentage and current state.
         """
-        return await ragflow_graph_status(task_id=task_id)
+        return await ragflow_graph_status(dataset_id=dataset_id)
 
     @mcp.tool()
     async def ragflow_get_graph_tool(
@@ -295,16 +295,16 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def ragflow_raptor_status_tool(
-        task_id: str,
+        dataset_id: str,
     ) -> dict[str, Any]:
         """Check status of a RAPTOR construction task.
 
         Polls construction progress for long-running operations.
 
         Args:
-            task_id: Task ID from ragflow_build_raptor. Required.
+            dataset_id: Dataset ID to check RAPTOR status for. Required.
 
         Returns:
             Status with progress percentage and current state.
         """
-        return await ragflow_raptor_status(task_id=task_id)
+        return await ragflow_raptor_status(dataset_id=dataset_id)

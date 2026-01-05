@@ -1494,7 +1494,6 @@ class RAGFlowConnector:
 
         Returns:
             Dictionary containing:
-                - task_id: ID for tracking construction progress
                 - dataset_id: The dataset being processed
                 - status: Current status (e.g., "processing")
                 - message: Status message
@@ -1505,7 +1504,7 @@ class RAGFlowConnector:
         """
         logger.debug("Building knowledge graph for dataset %s", dataset_id)
 
-        response = await self.post(f"/datasets/{dataset_id}/graph")
+        response = await self.post(f"/datasets/{dataset_id}/run_graphrag")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1518,16 +1517,16 @@ class RAGFlowConnector:
 
     async def get_graph_status(
         self,
-        task_id: str,
+        dataset_id: str,
     ) -> dict[str, Any]:
         """Get the status of a graph construction task.
 
         Args:
-            task_id: ID of the graph construction task.
+            dataset_id: ID of the dataset to check graph status for.
 
         Returns:
             Dictionary containing:
-                - task_id: The task ID
+                - dataset_id: The dataset ID
                 - status: Current status (e.g., "processing", "completed", "failed")
                 - progress: Progress percentage (0-100)
                 - message: Status message
@@ -1536,16 +1535,16 @@ class RAGFlowConnector:
             RAGFlowConnectionError: If connection fails.
             RAGFlowAPIError: If API returns an error.
         """
-        logger.debug("Getting graph status for task %s", task_id)
+        logger.debug("Getting graph status for dataset %s", dataset_id)
 
-        response = await self.get(f"/tasks/{task_id}")
+        response = await self.get(f"/datasets/{dataset_id}/trace_graphrag")
 
         # Extract data from response
         data = response.get("data", {})
 
-        # Ensure task_id is included
-        if "task_id" not in data:
-            data["task_id"] = task_id
+        # Ensure dataset_id is included
+        if "dataset_id" not in data:
+            data["dataset_id"] = dataset_id
 
         return data
 
@@ -1571,7 +1570,7 @@ class RAGFlowConnector:
         """
         logger.debug("Getting knowledge graph for dataset %s", dataset_id)
 
-        response = await self.get(f"/datasets/{dataset_id}/graph")
+        response = await self.get(f"/datasets/{dataset_id}/knowledge_graph")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1606,7 +1605,7 @@ class RAGFlowConnector:
         """
         logger.debug("Deleting knowledge graph for dataset %s", dataset_id)
 
-        response = await self.delete(f"/datasets/{dataset_id}/graph")
+        response = await self.delete(f"/datasets/{dataset_id}/knowledge_graph")
 
         return {
             "success": True,
@@ -1624,7 +1623,6 @@ class RAGFlowConnector:
 
         Returns:
             Dictionary containing:
-                - task_id: ID for tracking construction progress
                 - dataset_id: The dataset being processed
                 - status: Current status (e.g., "processing")
                 - message: Status message
@@ -1635,7 +1633,7 @@ class RAGFlowConnector:
         """
         logger.debug("Building RAPTOR tree for dataset %s", dataset_id)
 
-        response = await self.post(f"/datasets/{dataset_id}/raptor")
+        response = await self.post(f"/datasets/{dataset_id}/run_raptor")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1648,16 +1646,16 @@ class RAGFlowConnector:
 
     async def get_raptor_status(
         self,
-        task_id: str,
+        dataset_id: str,
     ) -> dict[str, Any]:
         """Get the status of a RAPTOR construction task.
 
         Args:
-            task_id: ID of the RAPTOR construction task.
+            dataset_id: ID of the dataset to check RAPTOR status for.
 
         Returns:
             Dictionary containing:
-                - task_id: The task ID
+                - dataset_id: The dataset ID
                 - status: Current status (e.g., "processing", "completed", "failed")
                 - progress: Progress percentage (0-100)
                 - message: Status message
@@ -1666,15 +1664,15 @@ class RAGFlowConnector:
             RAGFlowConnectionError: If connection fails.
             RAGFlowAPIError: If API returns an error.
         """
-        logger.debug("Getting RAPTOR status for task %s", task_id)
+        logger.debug("Getting RAPTOR status for dataset %s", dataset_id)
 
-        response = await self.get(f"/tasks/{task_id}")
+        response = await self.get(f"/datasets/{dataset_id}/trace_raptor")
 
         # Extract data from response
         data = response.get("data", {})
 
-        # Ensure task_id is included
-        if "task_id" not in data:
-            data["task_id"] = task_id
+        # Ensure dataset_id is included
+        if "dataset_id" not in data:
+            data["dataset_id"] = dataset_id
 
         return data

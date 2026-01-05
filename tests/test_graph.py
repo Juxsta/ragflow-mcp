@@ -54,25 +54,25 @@ class TestGraphRAGAndRAPTORTools:
 
         # Mock graph status response - in progress
         mock_connector.get_graph_status.return_value = {
-            "task_id": "task-graph-001",
+            "dataset_id": "dataset-abc123",
             "status": "processing",
             "progress": 45,
             "message": "Building entity relationships...",
         }
 
         with patch("src.tools.graph.get_connector", return_value=mock_connector):
-            result = await ragflow_graph_status(task_id="task-graph-001")
+            result = await ragflow_graph_status(dataset_id="dataset-abc123")
 
         # Verify status and progress are returned
-        assert "task_id" in result
-        assert result["task_id"] == "task-graph-001"
+        assert "dataset_id" in result
+        assert result["dataset_id"] == "dataset-abc123"
         assert result["status"] == "processing"
         assert result["progress"] == 45
         mock_connector.get_graph_status.assert_called_once()
 
-        # Verify task_id was passed correctly
+        # Verify dataset_id was passed correctly
         call_kwargs = mock_connector.get_graph_status.call_args[1]
-        assert call_kwargs.get("task_id") == "task-graph-001"
+        assert call_kwargs.get("dataset_id") == "dataset-abc123"
 
     @pytest.mark.asyncio
     async def test_get_graph_returns_entities_and_relationships(self, mock_connector):
@@ -188,7 +188,7 @@ class TestGraphRAGAndRAPTORTools:
 
         # Mock RAPTOR status response - completed
         mock_connector.get_raptor_status.return_value = {
-            "task_id": "task-raptor-001",
+            "dataset_id": "dataset-xyz789",
             "status": "completed",
             "progress": 100,
             "message": "RAPTOR tree construction completed",
@@ -197,18 +197,18 @@ class TestGraphRAGAndRAPTORTools:
         }
 
         with patch("src.tools.graph.get_connector", return_value=mock_connector):
-            result = await ragflow_raptor_status(task_id="task-raptor-001")
+            result = await ragflow_raptor_status(dataset_id="dataset-xyz789")
 
         # Verify status and progress are returned
-        assert "task_id" in result
-        assert result["task_id"] == "task-raptor-001"
+        assert "dataset_id" in result
+        assert result["dataset_id"] == "dataset-xyz789"
         assert result["status"] == "completed"
         assert result["progress"] == 100
         mock_connector.get_raptor_status.assert_called_once()
 
-        # Verify task_id was passed correctly
+        # Verify dataset_id was passed correctly
         call_kwargs = mock_connector.get_raptor_status.call_args[1]
-        assert call_kwargs.get("task_id") == "task-raptor-001"
+        assert call_kwargs.get("dataset_id") == "dataset-xyz789"
 
     @pytest.mark.asyncio
     async def test_graph_operations_handle_dataset_without_graph_gracefully(self, mock_connector):
@@ -247,17 +247,17 @@ class TestGraphRAGAndRAPTORTools:
 
         # Simulate progress updates at different stages
         progress_stages = [
-            {"task_id": "task-graph-002", "status": "processing", "progress": 10, "message": "Extracting entities..."},
-            {"task_id": "task-graph-002", "status": "processing", "progress": 50, "message": "Building relationships..."},
-            {"task_id": "task-graph-002", "status": "processing", "progress": 90, "message": "Finalizing graph..."},
-            {"task_id": "task-graph-002", "status": "completed", "progress": 100, "message": "Graph construction complete"},
+            {"dataset_id": "dataset-abc123", "status": "processing", "progress": 10, "message": "Extracting entities..."},
+            {"dataset_id": "dataset-abc123", "status": "processing", "progress": 50, "message": "Building relationships..."},
+            {"dataset_id": "dataset-abc123", "status": "processing", "progress": 90, "message": "Finalizing graph..."},
+            {"dataset_id": "dataset-abc123", "status": "completed", "progress": 100, "message": "Graph construction complete"},
         ]
 
         for expected_stage in progress_stages:
             mock_connector.get_graph_status.return_value = expected_stage
 
             with patch("src.tools.graph.get_connector", return_value=mock_connector):
-                result = await ragflow_graph_status(task_id="task-graph-002")
+                result = await ragflow_graph_status(dataset_id="dataset-abc123")
 
             # Verify progress reporting
             assert "progress" in result
