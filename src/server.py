@@ -21,6 +21,7 @@ from src.tools.documents import register_document_tools
 from src.tools.chunks import register_chunk_tools
 from src.tools.chat import register_chat_tools
 from src.tools.graph import register_graph_tools
+from src.tools.memory import register_memory_tools
 
 
 # Global connector instance
@@ -116,6 +117,7 @@ Available capabilities:
 - Chunk management (add, list, update, delete)
 - Chat assistant and session management
 - GraphRAG and RAPTOR construction
+- Memory management (create, list, update, delete, save messages)
 
 Use the status resource to check server health.""",
     lifespan=lifespan,
@@ -128,6 +130,7 @@ register_document_tools(mcp)
 register_chunk_tools(mcp)
 register_chat_tools(mcp)
 register_graph_tools(mcp)
+register_memory_tools(mcp)
 
 
 @mcp.resource("http://ragflow/status")
