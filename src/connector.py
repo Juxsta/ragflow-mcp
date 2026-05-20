@@ -983,6 +983,7 @@ class RAGFlowConnector:
 
     async def add_chunk(
         self,
+        dataset_id: str,
         document_id: str,
         content: str,
         keywords: list[str] | None = None,
@@ -991,6 +992,7 @@ class RAGFlowConnector:
         """Add a chunk to a document.
 
         Args:
+            dataset_id: ID of the dataset containing the document (required).
             document_id: ID of the document to add the chunk to (required).
             content: Text content of the chunk (required).
             keywords: Optional list of keywords for the chunk.
@@ -1011,13 +1013,13 @@ class RAGFlowConnector:
         payload: dict[str, Any] = {"content": content}
 
         if keywords is not None:
-            payload["keywords"] = keywords
+            payload["important_keywords"] = keywords
         if metadata is not None:
             payload["metadata"] = metadata
 
-        logger.debug("Adding chunk to document %s: content_length=%d", document_id, len(content))
+        logger.debug("Adding chunk to document %s in dataset %s: content_length=%d", document_id, dataset_id, len(content))
 
-        response = await self.post(f"/documents/{document_id}/chunks", json=payload)
+        response = await self.post(f"/datasets/{dataset_id}/documents/{document_id}/chunks", json=payload)
 
         # Extract chunk data from response
         data = response.get("data", {})
@@ -1501,7 +1503,7 @@ class RAGFlowConnector:
         """
         logger.debug("Building knowledge graph for dataset %s", dataset_id)
 
-        response = await self.post(f"/datasets/{dataset_id}/run_graphrag")
+        response = await self.post(f"/datasets/{dataset_id}/index?type=graph")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1534,7 +1536,7 @@ class RAGFlowConnector:
         """
         logger.debug("Getting graph status for dataset %s", dataset_id)
 
-        response = await self.get(f"/datasets/{dataset_id}/trace_graphrag")
+        response = await self.get(f"/datasets/{dataset_id}/index?type=graph")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1567,7 +1569,7 @@ class RAGFlowConnector:
         """
         logger.debug("Getting knowledge graph for dataset %s", dataset_id)
 
-        response = await self.get(f"/datasets/{dataset_id}/knowledge_graph")
+        response = await self.get(f"/datasets/{dataset_id}/graph")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1602,7 +1604,7 @@ class RAGFlowConnector:
         """
         logger.debug("Deleting knowledge graph for dataset %s", dataset_id)
 
-        response = await self.delete(f"/datasets/{dataset_id}/knowledge_graph")
+        response = await self.delete(f"/datasets/{dataset_id}/graph")
 
         return {
             "success": True,
@@ -1630,7 +1632,7 @@ class RAGFlowConnector:
         """
         logger.debug("Building RAPTOR tree for dataset %s", dataset_id)
 
-        response = await self.post(f"/datasets/{dataset_id}/run_raptor")
+        response = await self.post(f"/datasets/{dataset_id}/index?type=raptor")
 
         # Extract data from response
         data = response.get("data", {})
@@ -1663,7 +1665,7 @@ class RAGFlowConnector:
         """
         logger.debug("Getting RAPTOR status for dataset %s", dataset_id)
 
-        response = await self.get(f"/datasets/{dataset_id}/trace_raptor")
+        response = await self.get(f"/datasets/{dataset_id}/index?type=raptor")
 
         # Extract data from response
         data = response.get("data", {})

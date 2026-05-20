@@ -36,6 +36,7 @@ class TestChunkTools:
 
         with patch("src.tools.chunks.get_connector", return_value=mock_connector):
             result = await ragflow_add_chunk(
+                dataset_id="ds-123",
                 document_id="doc-456",
                 content="This is the chunk content for testing.",
                 keywords=["testing", "chunk", "content"],
@@ -50,6 +51,7 @@ class TestChunkTools:
 
         # Verify parameters were passed correctly
         call_kwargs = mock_connector.add_chunk.call_args[1]
+        assert call_kwargs.get("dataset_id") == "ds-123"
         assert call_kwargs.get("document_id") == "doc-456"
         assert call_kwargs.get("content") == "This is the chunk content for testing."
         assert call_kwargs.get("keywords") == ["testing", "chunk", "content"]

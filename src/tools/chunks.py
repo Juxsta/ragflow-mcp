@@ -24,6 +24,7 @@ def get_connector():
 async def ragflow_add_chunk(
     document_id: str,
     content: str,
+    dataset_id: str,
     keywords: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -36,6 +37,7 @@ async def ragflow_add_chunk(
         document_id: ID of the document to add the chunk to. Required.
         content: Text content of the chunk. Required.
             This is the actual text that will be indexed and searchable.
+        dataset_id: ID of the dataset containing the document. Required.
         keywords: Optional list of keywords for the chunk.
             These can be used to improve search relevance.
         metadata: Optional metadata dictionary for the chunk.
@@ -56,6 +58,7 @@ async def ragflow_add_chunk(
         content=content,
         keywords=keywords,
         metadata=metadata,
+        dataset_id=dataset_id,
     )
 
     return result
@@ -219,6 +222,7 @@ def register_chunk_tools(mcp: FastMCP) -> None:
     async def ragflow_add_chunk_tool(
         document_id: str,
         content: str,
+        dataset_id: str,
         keywords: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -229,6 +233,7 @@ def register_chunk_tools(mcp: FastMCP) -> None:
         Args:
             document_id: Document ID to add the chunk to. Required.
             content: Text content of the chunk. Required.
+            dataset_id: Dataset ID containing the document. Required.
             keywords: Optional list of keywords for search.
             metadata: Optional metadata dictionary.
 
@@ -238,6 +243,7 @@ def register_chunk_tools(mcp: FastMCP) -> None:
         return await ragflow_add_chunk(
             document_id=document_id,
             content=content,
+            dataset_id=dataset_id,
             keywords=keywords,
             metadata=metadata,
         )
