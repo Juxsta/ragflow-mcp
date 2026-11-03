@@ -8,6 +8,8 @@ Provides async HTTP client with:
 """
 import base64
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,33 @@ from src.cache import LRUCache
 
 
 logger = logging.getLogger(__name__)
+
+_BRACKETED_IPV6_HOST = re.compile(r"^\[([^\[\]]+)\]$")
+
+
+def _normalize_no_proxy_env() -> None:
+    """Make `no_proxy` / `NO_PROXY` entries parseable by httpx.
+
+    httpx reads the proxy environment when a client is constructed and parses
+    every `no_proxy` entry as a URL. A bracketed IPv6 literal such as `[::1]`
+    is split at its last colon, which yields the invalid port `:1]` and makes
+    client construction raise:
+
+        httpx.InvalidURL: Invalid port: ':1]'
+
+    That aborts server startup for any deployment whose environment exports a
+    bracketed IPv6 entry in `no_proxy` (a common default). The bare form
+    (`::1`) is parsed without error, so the brackets are dropped.
+    """
+    for var in ("no_proxy", "NO_PROXY"):
+        raw = os.environ.get(var)
+        if not raw:
+            continue
+        entries = [entry.strip() for entry in raw.split(",") if entry.strip()]
+        fixed = [_BRACKETED_IPV6_HOST.sub(r"\1", entry) for entry in entries]
+        if fixed != entries:
+            os.environ[var] = ",".join(fixed)
+
 
 
 class RAGFlowConnectionError(Exception):
@@ -76,6 +105,8 @@ class RAGFlowConnector:
         timeout: float = 300.0,
         cache_ttl: float = 300.0,
     ):
+        _normalize_no_proxy_env()
+
         """Initialize the connector.
 
         Args:
