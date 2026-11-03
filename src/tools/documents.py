@@ -197,9 +197,16 @@ async def ragflow_parse_document_sync(
         chunk_method=chunk_method,
     )
 
+    # The document list is cached for RAGFLOW_CACHE_TTL seconds, so a snapshot
+    # taken before the upload/parse request can be served here. Invalidate the
+    # cache before polling and on every iteration so status reads are fresh;
+    # otherwise the document never appears as DONE and this call times out.
+    connector.invalidate_cache()
+
     # Poll for completion by checking document status
     elapsed = 0.0
     while elapsed < timeout:
+        connector.invalidate_cache()
         docs = await connector.list_documents(dataset_id=dataset_id)
         doc = next((d for d in docs.get("documents", []) if d["id"] == document_id), None)
 
