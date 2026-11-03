@@ -18,6 +18,16 @@ from src.cache import LRUCache
 
 logger = logging.getLogger(__name__)
 
+# Suffixes that are decoded as UTF-8 text instead of base64 encoded.
+_TEXTUAL_SUFFIXES = frozenset(
+    {
+        "txt", "md", "markdown", "rst", "log", "csv", "tsv", "json", "jsonl",
+        "yaml", "yml", "toml", "ini", "cfg", "conf", "xml", "html", "htm",
+        "py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "c", "h", "cpp",
+        "hpp", "sh", "bash", "zsh", "sql", "env", "properties", "text",
+    }
+)
+
 
 class RAGFlowConnectionError(Exception):
     """Exception raised when connection to RAGFlow fails."""
@@ -354,6 +364,16 @@ class RAGFlowConnector:
         keyword_weight: float | None = None,
         dataset_ids: list[str] | None = None,
         document_ids: list[str] | None = None,
+        page: int | None = None,
+        page_size: int | None = None,
+        vector_similarity_weight: float | None = None,
+        rerank_id: str | None = None,
+        keyword: bool | None = None,
+        force_refresh: bool | None = None,
+        highlight: bool | None = None,
+        knn_top_k: int | None = None,
+        knn_num_candidates: int | None = None,
+        use_kg: bool | None = None,
     ) -> dict[str, Any]:
         """Perform semantic retrieval against RAGFlow knowledge base.
 
@@ -364,6 +384,22 @@ class RAGFlowConnector:
             keyword_weight: Weight for keyword matching (0-1).
             dataset_ids: Optional list of dataset IDs to search within.
             document_ids: Optional list of document IDs to further filter.
+            page: 1-based page of results (RAGFlow v1). Do not combine with
+                top_k: top_k caps the candidate set, so paging then slices
+                inside it and consecutive pages overlap.
+            page_size: Number of results per page (RAGFlow v1).
+            vector_similarity_weight: Weight of the vector score in the hybrid
+                score (0-1, RAGFlow v1). The keyword weight is its complement.
+            rerank_id: ID of a rerank model to reorder the candidates with
+                (RAGFlow v1).
+            keyword: Run keyword matching only (RAGFlow v1).
+            force_refresh: Bypass cached retrieval results (RAGFlow v1).
+            highlight: Ask the server to mark the matched terms (RAGFlow v1).
+            knn_top_k: Number of candidates the vector stage keeps
+                (RAGFlow v1).
+            knn_num_candidates: Candidate pool size for the vector stage
+                (RAGFlow v1).
+            use_kg: Include knowledge-graph expansion (RAGFlow v1).
 
         Returns:
             Dictionary containing:
@@ -387,6 +423,32 @@ class RAGFlowConnector:
             payload["dataset_ids"] = dataset_ids
         if document_ids is not None:
             payload["document_ids"] = document_ids
+        if page is not None:
+            payload["page"] = page
+        if page_size is not None:
+            payload["page_size"] = page_size
+        if vector_similarity_weight is not None:
+            payload["vector_similarity_weight"] = vector_similarity_weight
+        elif keyword_weight is not None:
+            # RAGFlow v1 dropped `keyword_weight` in favour of
+            # `vector_similarity_weight` and derives the keyword weight as
+            # 1 - vector weight. Send the v1 field as well so the same
+            # request behaves identically on both server generations.
+            payload["vector_similarity_weight"] = 1.0 - keyword_weight
+        if rerank_id:
+            payload["rerank_id"] = rerank_id
+        if keyword is not None:
+            payload["keyword"] = keyword
+        if force_refresh is not None:
+            payload["force_refresh"] = force_refresh
+        if highlight is not None:
+            payload["highlight"] = highlight
+        if knn_top_k is not None:
+            payload["knn_top_k"] = knn_top_k
+        if knn_num_candidates is not None:
+            payload["knn_num_candidates"] = knn_num_candidates
+        if use_kg is not None:
+            payload["use_kg"] = use_kg
 
         logger.debug("Retrieval request: query=%s, payload=%s", query, payload)
 
@@ -419,6 +481,20 @@ class RAGFlowConnector:
                 formatted_chunk["dataset_id"] = chunk["dataset_id"]
             if "chunk_id" in chunk:
                 formatted_chunk["chunk_id"] = chunk["chunk_id"]
+
+            # RAGFlow v1 identifies a chunk by `id` and reports the hybrid
+            # score split into its vector and keyword parts. Both are needed
+            # to judge a hit and to reference the chunk afterwards.
+            if "id" in chunk:
+                formatted_chunk["id"] = chunk["id"]
+            if "vector_similarity" in chunk:
+                formatted_chunk["vector_similarity"] = chunk["vector_similarity"]
+            if "term_similarity" in chunk:
+                formatted_chunk["term_similarity"] = chunk["term_similarity"]
+            if "positions" in chunk:
+                formatted_chunk["positions"] = chunk["positions"]
+            if "important_keywords" in chunk:
+                formatted_chunk["important_keywords"] = chunk["important_keywords"]
 
             chunks.append(formatted_chunk)
 
@@ -904,13 +980,88 @@ class RAGFlowConnector:
         response = await self.get(f"/documents/{document_id}")
 
         # Extract data from response
-        data = response.get("data", {})
+        data = response.get("data", {}) or {}
 
         # Ensure document_id is included
         if "id" not in data:
             data["id"] = document_id
 
+        # RAGFlow v1 (Go backend) answers GET /documents/{id} with metadata
+        # only; the file itself is served by
+        # GET /datasets/{dataset_id}/documents/{document_id}. Older servers
+        # returned the content inline, so that path stays untouched.
+        if not data.get("content"):
+            dataset_id = data.get("kb_id") or data.get("dataset_id")
+            if dataset_id:
+                content, content_type, is_base64 = await self._download_document_file(
+                    dataset_id, document_id, data
+                )
+                data["content"] = content
+                if content_type:
+                    data["content_type"] = content_type
+                data["is_base64"] = is_base64
+
         return data
+
+    async def _download_document_file(
+        self,
+        dataset_id: str,
+        document_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[str, str | None, bool]:
+        """Fetch the raw file behind a document.
+
+        The endpoint answers with the file body instead of a JSON envelope.
+        Text payloads are returned decoded, everything else base64 encoded.
+
+        Args:
+            dataset_id: ID of the dataset that owns the document.
+            document_id: ID of the document.
+            metadata: Document metadata, used to detect textual file types.
+
+        Returns:
+            Tuple of (content, content_type, is_base64).
+
+        Raises:
+            RAGFlowConnectionError: If connection fails.
+            RAGFlowAPIError: If the server returns an error status.
+        """
+        if not self.client:
+            raise RuntimeError("Connector not initialized. Use 'async with' context.")
+
+        url = self._build_url(f"/datasets/{dataset_id}/documents/{document_id}")
+        logger.debug("GET %s (document file)", url)
+
+        try:
+            response = await self.client.get(url)
+            response.raise_for_status()
+        except httpx.ConnectError as e:
+            raise RAGFlowConnectionError(f"Connection failed: {e}")
+        except httpx.TimeoutException as e:
+            raise RAGFlowConnectionError(f"Request timeout: {e}")
+        except httpx.HTTPStatusError as e:
+            raise RAGFlowAPIError(
+                f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+            )
+
+        content_type = response.headers.get("content-type")
+        raw = response.content
+        if content_type and content_type.startswith("text/"):
+            try:
+                return raw.decode("utf-8"), content_type, False
+            except UnicodeDecodeError:
+                pass
+
+        # RAGFlow serves many text formats as application/octet-stream, so the
+        # suffix decides whether the payload is decoded instead of base64
+        # encoded; a model can read the decoded text directly.
+        suffix = str((metadata or {}).get("suffix") or "").lower().lstrip(".")
+        if suffix in _TEXTUAL_SUFFIXES:
+            try:
+                return raw.decode("utf-8"), content_type, False
+            except UnicodeDecodeError:
+                pass
+        return base64.b64encode(raw).decode("ascii"), content_type, True
 
     async def delete_document(
         self,

@@ -70,6 +70,16 @@ Or manually add to `~/.claude/settings.json`:
 ### Retrieval
 - `ragflow_retrieval_tool` - Semantic search across datasets
 
+  Parameters: `query`, `similarity_threshold`, `top_k`, `keyword_weight`,
+  `dataset_ids`, `document_ids`, `page`, `page_size`,
+  `vector_similarity_weight`, `rerank_id`, `keyword`, `force_refresh`,
+  `highlight`, `knn_top_k`, `knn_num_candidates`, `use_kg`.
+
+  `page` / `page_size` and the RAGFlow v1 search controls are optional; the
+  v1 fields are ignored by older servers. `keyword_weight` (older servers) and
+  `vector_similarity_weight` (v1) describe the same hybrid weighting from
+  opposite ends, so setting one also sets the other.
+
 ### Dataset Management
 - `ragflow_list_datasets_tool` - List all datasets
 - `ragflow_create_dataset_tool` - Create a new dataset
