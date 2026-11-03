@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import atexit
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -22,6 +23,8 @@ from src.tools.chunks import register_chunk_tools
 from src.tools.chat import register_chat_tools
 from src.tools.graph import register_graph_tools
 
+
+logger = logging.getLogger(__name__)
 
 # Global connector instance
 _connector: RAGFlowConnector | None = None
@@ -128,6 +131,59 @@ register_document_tools(mcp)
 register_chunk_tools(mcp)
 register_chat_tools(mcp)
 register_graph_tools(mcp)
+
+
+def apply_tool_allowlist(server: FastMCP) -> list[str]:
+    """Drop tools that are not listed in `RAGFLOW_MCP_TOOL_ALLOWLIST`.
+
+    Every registered tool contributes its name, description and JSON schema to
+    the client's tool catalogue, which costs context on every request even
+    when the capability is never used. Deployments that only need a subset can
+    set `RAGFLOW_MCP_TOOL_ALLOWLIST` to a comma-separated list of tool names;
+    every other tool is then removed at startup.
+
+    When the variable is unset or empty, all tools stay registered.
+
+    Args:
+        server: The FastMCP server whose tools should be filtered.
+
+    Returns:
+        The names of the tools that were removed.
+    """
+    raw = os.environ.get("RAGFLOW_MCP_TOOL_ALLOWLIST", "").strip()
+    if not raw:
+        return []
+
+    allowed = {name.strip() for name in raw.split(",") if name.strip()}
+    manager = getattr(server, "_tool_manager", None)
+    if manager is None or not hasattr(manager, "list_tools"):
+        logger.warning(
+            "RAGFLOW_MCP_TOOL_ALLOWLIST is set but the tool inventory is "
+            "unavailable; keeping all tools"
+        )
+        return []
+
+    registered = {tool.name for tool in manager.list_tools()}
+    removed = sorted(registered - allowed)
+    for name in removed:
+        server.remove_tool(name)
+
+    unknown = sorted(allowed - registered)
+    if unknown:
+        logger.warning(
+            "RAGFLOW_MCP_TOOL_ALLOWLIST names that are not registered: %s", unknown
+        )
+
+    logger.info(
+        "Tool allowlist active: kept %d of %d tools (removed %s)",
+        len(allowed & registered),
+        len(registered),
+        ", ".join(removed) if removed else "none",
+    )
+    return removed
+
+
+apply_tool_allowlist(mcp)
 
 
 @mcp.resource("http://ragflow/status")
