@@ -19,8 +19,15 @@ A comprehensive Model Context Protocol (MCP) server for [RAGFlow](https://github
 - Python 3.10+
 - RAGFlow server running and accessible (v0.16.0+ for core features)
 - RAGFlow API key
+- MCP Python SDK 1.x (`mcp>=1.5.0,<2`)
 
 > **Note:** GraphRAG and RAPTOR build APIs require RAGFlow v0.21.0 or later.
+
+> **Note:** This project targets the MCP Python SDK **1.x**. The 2.x release
+> removed `mcp.server.fastmcp` (renamed to `mcp.server.mcpserver`), so an
+> unbounded `mcp>=1.5.0` now resolves to 2.x and the server fails at import
+> time with `ModuleNotFoundError: No module named 'mcp.server.fastmcp'`.
+> The dependency is therefore pinned to `mcp<2`.
 
 ### Install from source
 
