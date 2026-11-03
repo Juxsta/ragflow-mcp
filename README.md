@@ -64,6 +64,21 @@ Or manually add to `~/.claude/settings.json`:
 | `RAGFLOW_URL` | No | `http://localhost:9380/api/v1` | RAGFlow API base URL |
 | `RAGFLOW_TIMEOUT` | No | `300` | Request timeout in seconds |
 | `RAGFLOW_LOG_LEVEL` | No | `INFO` | Logging level |
+| `RAGFLOW_MCP_TOOL_ALLOWLIST` | No | *(all tools)* | Comma-separated list of tool names to expose. Every other tool is removed at startup, which keeps the client's tool catalogue small |
+
+### Limiting the exposed tool surface
+
+Each registered tool contributes its name, description and JSON schema to the
+client's tool catalogue, which costs context on every request even when the
+capability is never used. To expose only a subset, set
+`RAGFLOW_MCP_TOOL_ALLOWLIST` to a comma-separated list of tool names:
+
+```bash
+export RAGFLOW_MCP_TOOL_ALLOWLIST=ragflow_retrieval_tool,ragflow_list_datasets_tool
+```
+
+All other tools are removed when the server starts. Unknown names in the list
+are logged as a warning and ignored.
 
 ## Available Tools
 
