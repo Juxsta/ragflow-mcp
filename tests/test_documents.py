@@ -274,3 +274,94 @@ class TestDocumentTools:
         mock_connector.stop_parsing.assert_called_once()
         call_kwargs = mock_connector.stop_parsing.call_args[1]
         assert call_kwargs.get("task_id") == "task-xyz789"
+
+
+class TestParseDocumentSyncCache:
+    """Regression tests for the blocking parse tool's document-list cache."""
+
+    @pytest.fixture
+    def mock_connector(self):
+        """Create a mock connector for testing."""
+        from src.connector import RAGFlowConnector
+        connector = MagicMock(spec=RAGFlowConnector)
+        connector.parse_document = AsyncMock()
+        connector.list_documents = AsyncMock()
+        connector.invalidate_cache = MagicMock()
+        return connector
+
+    @pytest.mark.asyncio
+    async def test_parse_document_sync_ignores_stale_document_cache(self):
+        """A cached pre-parse document list must not stall the sync parse.
+
+        `list_documents()` is served from an LRU cache. If the cache holds a
+        snapshot from before the parse request, polling it forever returns the
+        stale status and the tool times out instead of completing.
+        """
+        from src.connector import RAGFlowConnector
+        from src.tools.documents import ragflow_parse_document_sync
+
+        connector = RAGFlowConnector(
+            api_key="test-api-key", base_url="http://localhost:9380/api/v1"
+        )
+
+        stale = {"data": {"docs": [{"id": "doc-1", "run": "RUNNING", "progress": 0.1}]}}
+        fresh = {"data": {"docs": [{"id": "doc-1", "run": "DONE", "progress": 1.0}]}}
+
+        calls = {"n": 0}
+
+        async def fake_get(path, params=None, api_key=""):
+            calls["n"] += 1
+            return stale if calls["n"] == 1 else fresh
+
+        connector.get = fake_get  # type: ignore[method-assign]
+
+        async def fake_parse_document(**kwargs):
+            return {"status": "processing", "document_id": "doc-1"}
+
+        connector.parse_document = fake_parse_document  # type: ignore[method-assign]
+
+        # Populate the cache with the pre-parse snapshot.
+        await connector.list_documents(dataset_id="ds-1")
+        assert connector.cache.get(
+            "documents:ds-1:name=None:status=None:type=None:after=None:"
+            "before=None:page=None:size=None"
+        ) is not None
+
+        with patch("src.tools.documents.get_connector", return_value=connector):
+            result = await ragflow_parse_document_sync(
+                dataset_id="ds-1",
+                document_id="doc-1",
+                poll_interval=0.01,
+                timeout=5.0,
+            )
+
+        assert result["status"] == "completed"
+        assert result["progress"] == 1.0
+        # The stale snapshot must not be the answer: a fresh status was read.
+        assert calls["n"] >= 2
+
+    @pytest.mark.asyncio
+    async def test_parse_document_sync_invalidates_cache_while_polling(self, mock_connector):
+        """The cache is invalidated before every status read."""
+        from src.tools.documents import ragflow_parse_document_sync
+
+        mock_connector.parse_document.return_value = {
+            "status": "processing",
+            "document_id": "doc-456",
+            "dataset_id": "dataset-xyz",
+        }
+        mock_connector.list_documents.side_effect = [
+            {"documents": [{"id": "doc-456", "run": "RUNNING", "progress": 0.5}]},
+            {"documents": [{"id": "doc-456", "run": "DONE", "progress": 1.0}]},
+        ]
+
+        with patch("src.tools.documents.get_connector", return_value=mock_connector):
+            result = await ragflow_parse_document_sync(
+                dataset_id="dataset-xyz",
+                document_id="doc-456",
+                poll_interval=0.01,
+                timeout=5.0,
+            )
+
+        assert result["status"] == "completed"
+        assert mock_connector.invalidate_cache.call_count >= 2
