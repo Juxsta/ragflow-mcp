@@ -24,7 +24,17 @@ async def ragflow_retrieval(
     keyword_weight: float | None = None,
     dataset_ids: list[str] | None = None,
     document_ids: list[str] | None = None,
-) -> dict[str, Any]:
+    page: int | None = None,
+    page_size: int | None = None,
+    vector_similarity_weight: float | None = None,
+    rerank_id: str | None = None,
+    keyword: bool | None = None,
+    force_refresh: bool | None = None,
+    highlight: bool | None = None,
+    knn_top_k: int | None = None,
+    knn_num_candidates: int | None = None,
+    use_kg: bool | None = None,
+    ) -> dict[str, Any]:
     """Perform semantic retrieval against RAGFlow knowledge base.
 
     Search for relevant chunks across datasets using natural language queries.
@@ -41,6 +51,21 @@ async def ragflow_retrieval(
             If not provided, searches all accessible datasets.
         document_ids: Optional list of document IDs to further filter results.
             Can only be used with documents from the specified datasets.
+        page: 1-based page of results (RAGFlow v1). Do not combine with
+            top_k: top_k caps the candidate set, so paging then slices
+            inside it and consecutive pages overlap.
+        page_size: Number of results per page (RAGFlow v1).
+        vector_similarity_weight: Weight of the vector score in the hybrid score
+            (0-1, RAGFlow v1). The keyword weight is its complement.
+        rerank_id: ID of a rerank model used to reorder the candidates
+            (RAGFlow v1).
+        keyword: Run keyword matching only (RAGFlow v1).
+        force_refresh: Bypass cached retrieval results (RAGFlow v1).
+        highlight: Ask the server to mark the matched terms (RAGFlow v1).
+        knn_top_k: Number of candidates the vector stage keeps (RAGFlow v1).
+        knn_num_candidates: Candidate pool size for the vector stage
+            (RAGFlow v1).
+        use_kg: Include knowledge-graph expansion (RAGFlow v1).
 
     Returns:
         Dictionary containing:
@@ -61,6 +86,16 @@ async def ragflow_retrieval(
         keyword_weight=keyword_weight,
         dataset_ids=dataset_ids,
         document_ids=document_ids,
+        page=page,
+        page_size=page_size,
+        vector_similarity_weight=vector_similarity_weight,
+        rerank_id=rerank_id,
+        keyword=keyword,
+        force_refresh=force_refresh,
+        highlight=highlight,
+        knn_top_k=knn_top_k,
+        knn_num_candidates=knn_num_candidates,
+        use_kg=use_kg,
     )
 
     return result
@@ -80,6 +115,16 @@ def register_retrieval_tools(mcp: FastMCP) -> None:
         keyword_weight: float | None = None,
         dataset_ids: list[str] | None = None,
         document_ids: list[str] | None = None,
+        page: int | None = None,
+        page_size: int | None = None,
+        vector_similarity_weight: float | None = None,
+        rerank_id: str | None = None,
+        keyword: bool | None = None,
+        force_refresh: bool | None = None,
+        highlight: bool | None = None,
+        knn_top_k: int | None = None,
+        knn_num_candidates: int | None = None,
+        use_kg: bool | None = None,
     ) -> dict[str, Any]:
         """Search RAGFlow knowledge base using semantic retrieval.
 
@@ -94,6 +139,22 @@ def register_retrieval_tools(mcp: FastMCP) -> None:
             keyword_weight: Weight for keyword matching (0-1). Higher = more keyword focus.
             dataset_ids: List of dataset IDs to search within. Omit to search all.
             document_ids: List of document IDs to filter results.
+            page: 1-based page of results (RAGFlow v1). Do not combine with
+                top_k: top_k caps the candidate set, so paging then slices
+                inside it and consecutive pages overlap.
+            page_size: Number of results per page (RAGFlow v1).
+            vector_similarity_weight: Weight of the vector score in the hybrid
+                score (0-1, RAGFlow v1); the keyword weight is its complement.
+            rerank_id: ID of a rerank model used to reorder candidates
+                (RAGFlow v1).
+            keyword: Run keyword matching only (RAGFlow v1).
+            force_refresh: Bypass cached retrieval results (RAGFlow v1).
+            highlight: Mark the matched terms in the returned chunks
+                (RAGFlow v1).
+            knn_top_k: Number of candidates the vector stage keeps (RAGFlow v1).
+            knn_num_candidates: Candidate pool size for the vector stage
+                (RAGFlow v1).
+            use_kg: Include knowledge-graph expansion (RAGFlow v1).
 
         Returns:
             Dictionary with 'chunks' list and 'total' count.
@@ -106,4 +167,14 @@ def register_retrieval_tools(mcp: FastMCP) -> None:
             keyword_weight=keyword_weight,
             dataset_ids=dataset_ids,
             document_ids=document_ids,
+            page=page,
+            page_size=page_size,
+            vector_similarity_weight=vector_similarity_weight,
+            rerank_id=rerank_id,
+            keyword=keyword,
+            force_refresh=force_refresh,
+            highlight=highlight,
+            knn_top_k=knn_top_k,
+            knn_num_candidates=knn_num_candidates,
+            use_kg=use_kg,
         )
