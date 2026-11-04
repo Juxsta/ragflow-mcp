@@ -104,6 +104,11 @@ async def ragflow_update_chunk(
     chunk_id: str,
     content: str | None = None,
     keywords: list[str] | None = None,
+    dataset_id: str | None = None,
+    document_id: str | None = None,
+    questions: list[str] | None = None,
+    available: bool | None = None,
+    positions: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Update a chunk's content and/or keywords.
 
@@ -119,6 +124,13 @@ async def ragflow_update_chunk(
             If not provided, content remains unchanged.
         keywords: New list of keywords for the chunk.
             If not provided, keywords remain unchanged.
+        dataset_id: ID of the dataset that owns the chunk. Required by
+            RAGFlow v1, which addresses chunks by their full path.
+        document_id: ID of the document that owns the chunk. Required by
+            RAGFlow v1.
+        questions: New question keywords for the chunk.
+        available: Whether the chunk stays available for retrieval.
+        positions: New positions of the chunk inside the document.
 
     Returns:
         Dictionary containing the updated chunk with:
@@ -133,6 +145,11 @@ async def ragflow_update_chunk(
         chunk_id=chunk_id,
         content=content,
         keywords=keywords,
+        dataset_id=dataset_id,
+        document_id=document_id,
+        questions=questions,
+        available=available,
+        positions=positions,
     )
 
     return result
@@ -280,6 +297,11 @@ def register_chunk_tools(mcp: FastMCP) -> None:
         chunk_id: str,
         content: str | None = None,
         keywords: list[str] | None = None,
+        dataset_id: str | None = None,
+        document_id: str | None = None,
+        questions: list[str] | None = None,
+        available: bool | None = None,
+        positions: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Update a chunk's content and/or keywords.
 
@@ -289,6 +311,11 @@ def register_chunk_tools(mcp: FastMCP) -> None:
             chunk_id: Chunk ID to update. Required.
             content: New text content for the chunk.
             keywords: New list of keywords.
+            dataset_id: Dataset that owns the chunk. Required by RAGFlow v1.
+            document_id: Document that owns the chunk. Required by RAGFlow v1.
+            questions: New question keywords for the chunk.
+            available: Whether the chunk stays available for retrieval.
+            positions: New positions of the chunk inside the document.
 
         Returns:
             Updated chunk with id, content, keywords, updated_at.
@@ -297,6 +324,11 @@ def register_chunk_tools(mcp: FastMCP) -> None:
             chunk_id=chunk_id,
             content=content,
             keywords=keywords,
+            dataset_id=dataset_id,
+            document_id=document_id,
+            questions=questions,
+            available=available,
+            positions=positions,
         )
 
     @mcp.tool()
