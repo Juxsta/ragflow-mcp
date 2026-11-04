@@ -306,6 +306,8 @@ async def ragflow_delete_document(
 
 async def ragflow_stop_parsing(
     task_id: str,
+    dataset_id: str | None = None,
+    document_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Stop an active parsing job.
 
@@ -313,8 +315,12 @@ async def ragflow_stop_parsing(
     This is useful for long-running parsing jobs that need to be aborted.
 
     Args:
-        task_id: ID of the parsing task to stop. Required.
-            This is the task_id returned by ragflow_parse_document.
+        task_id: ID of the parsing task to stop. Required by older servers;
+            this is the task_id returned by ragflow_parse_document.
+        dataset_id: ID of the dataset that owns the documents. Required by
+            RAGFlow v1, which stops documents instead of tasks.
+        document_ids: IDs of the documents whose parsing is stopped.
+            Required by RAGFlow v1.
 
     Returns:
         Dictionary containing:
@@ -324,7 +330,11 @@ async def ragflow_stop_parsing(
     """
     connector = get_connector()
 
-    result = await connector.stop_parsing(task_id=task_id)
+    result = await connector.stop_parsing(
+        task_id=task_id,
+        dataset_id=dataset_id,
+        document_ids=document_ids,
+    )
 
     return result
 
@@ -503,15 +513,24 @@ def register_document_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     async def ragflow_stop_parsing_tool(
         task_id: str,
+        dataset_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Stop an active parsing job.
 
         Cancels a document parsing operation in progress.
 
         Args:
-            task_id: Parsing task ID to stop. Required.
+            task_id: Parsing task ID to stop. Required by older servers.
+            dataset_id: Dataset that owns the documents. Required by RAGFlow v1.
+            document_ids: Documents whose parsing is stopped. Required by
+                RAGFlow v1.
 
         Returns:
             Dictionary with task_id, status ("cancelled"), message.
         """
-        return await ragflow_stop_parsing(task_id=task_id)
+        return await ragflow_stop_parsing(
+            task_id=task_id,
+            dataset_id=dataset_id,
+            document_ids=document_ids,
+        )

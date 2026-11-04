@@ -19,6 +19,36 @@ from src.cache import LRUCache
 logger = logging.getLogger(__name__)
 
 
+_UNSUPPORTED_FIELD_MARKERS = (
+    "extra inputs are not permitted",
+    "unknown field",
+    "additional properties",
+    "is not supported",
+)
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Return a mapping for an API payload that may be null or a list.
+
+    RAGFlow v1 answers some routes with `"data": null`, so a plain
+    `response.get("data", {})` can still yield None.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def _is_unsupported_field_error(exc: Exception) -> bool:
+    """Report whether a server rejected the request because of a field.
+
+    RAGFlow v1 tightened several request contracts: creating a dataset no
+    longer accepts `description` or `chunk_method`, and updating one no
+    longer accepts `chunk_method`. The older servers accept those fields,
+    so the request is retried without them instead of dropping the values
+    unconditionally.
+    """
+    message = str(exc).lower()
+    return any(marker in message for marker in _UNSUPPORTED_FIELD_MARKERS)
+
+
 class RAGFlowConnectionError(Exception):
     """Exception raised when connection to RAGFlow fails."""
 
@@ -300,6 +330,38 @@ class RAGFlowConnector:
         except httpx.TimeoutException as e:
             raise RAGFlowConnectionError(f"Request timeout: {e}")
 
+    async def patch(
+        self,
+        path: str,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Make PATCH request to RAGFlow API.
+
+        Args:
+            path: API path.
+            json: JSON body to send.
+
+        Returns:
+            Parsed JSON response.
+
+        Raises:
+            RAGFlowConnectionError: If connection fails.
+            RAGFlowAPIError: If API returns an error.
+        """
+        if not self.client:
+            raise RuntimeError("Connector not initialized. Use 'async with' context.")
+
+        url = self._build_url(path)
+        logger.debug("PATCH %s json=%s", url, json)
+
+        try:
+            response = await self.client.patch(url, json=json)
+            return await self._handle_response(response)
+        except httpx.ConnectError as e:
+            raise RAGFlowConnectionError(f"Connection failed: {e}")
+        except httpx.TimeoutException as e:
+            raise RAGFlowConnectionError(f"Request timeout: {e}")
+
     async def delete(
         self,
         path: str,
@@ -466,10 +528,31 @@ class RAGFlowConnector:
 
         logger.debug("Creating dataset: %s", payload)
 
-        response = await self.post("/datasets", json=payload)
+        try:
+            response = await self.post("/datasets", json=payload)
+        except RAGFlowAPIError as exc:
+            # RAGFlow v1 rejects `description` and `chunk_method` here; older
+            # servers accept them, so retry with the v1 field set instead of
+            # dropping the values unconditionally.
+            if not _is_unsupported_field_error(exc):
+                raise
+            reduced = {
+                key: value
+                for key, value in payload.items()
+                if key not in ("description", "chunk_method")
+            }
+            logger.info(
+                "Retrying dataset creation without %s (server rejected them)",
+                sorted(set(payload) - set(reduced)),
+            )
+            response = await self.post("/datasets", json=reduced)
 
         # Extract dataset data from response
         data = response.get("data", {})
+
+        # Older servers answer with a list, v1 with the dataset object.
+        if isinstance(data, list):
+            data = data[0] if data else {}
 
         return data
 
@@ -576,7 +659,16 @@ class RAGFlowConnector:
 
         logger.debug("Updating dataset %s: %s", dataset_id, payload)
 
-        response = await self.put(f"/datasets/{dataset_id}", json=payload)
+        try:
+            response = await self.put(f"/datasets/{dataset_id}", json=payload)
+        except RAGFlowAPIError as exc:
+            # RAGFlow v1 does not accept `chunk_method` on update; older
+            # servers do, so retry with the v1 field set.
+            if not _is_unsupported_field_error(exc) or "chunk_method" not in payload:
+                raise
+            reduced = {k: v for k, v in payload.items() if k != "chunk_method"}
+            logger.info("Retrying dataset update without chunk_method")
+            response = await self.put(f"/datasets/{dataset_id}", json=reduced)
 
         # Extract data from response
         data = response.get("data", {})
@@ -946,11 +1038,18 @@ class RAGFlowConnector:
     async def stop_parsing(
         self,
         task_id: str,
+        dataset_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Stop an active parsing job.
 
         Args:
-            task_id: ID of the parsing task to stop (required).
+            task_id: ID of the parsing task to stop. Required by older
+                servers; RAGFlow v1 stops documents instead.
+            dataset_id: ID of the dataset that owns the documents. Required
+                by RAGFlow v1.
+            document_ids: IDs of the documents whose parsing is stopped.
+                Required by RAGFlow v1.
 
         Returns:
             Dictionary containing:
@@ -962,6 +1061,24 @@ class RAGFlowConnector:
             RAGFlowConnectionError: If connection fails.
             RAGFlowAPIError: If API returns an error.
         """
+        if dataset_id and document_ids:
+            # RAGFlow v1: POST /datasets/{ds}/documents/stop
+            logger.debug(
+                "Stopping parsing of %d document(s) in dataset %s",
+                len(document_ids),
+                dataset_id,
+            )
+            response = await self.post(
+                f"/datasets/{dataset_id}/documents/stop",
+                json={"document_ids": document_ids},
+            )
+            data = response.get("data")
+            if isinstance(data, list):
+                data = {"document_ids": data}
+            elif not isinstance(data, dict):
+                data = {}
+            return data
+
         logger.debug("Stopping parsing task: %s", task_id)
 
         response = await self.post(f"/tasks/{task_id}/stop")
@@ -1022,7 +1139,16 @@ class RAGFlowConnector:
         response = await self.post(f"/datasets/{dataset_id}/documents/{document_id}/chunks", json=payload)
 
         # Extract chunk data from response
-        data = response.get("data", {})
+        data = _as_dict(response.get("data"))
+
+        # v1 answers with the created chunk under `data.chunk`, older servers
+        # with `data.chunks`; both are reduced to the chunk itself.
+        if isinstance(data, dict):
+            chunk = data.get("chunk")
+            if isinstance(chunk, dict):
+                data = chunk
+            elif isinstance(data.get("chunks"), list) and data["chunks"]:
+                data = data["chunks"][0]
 
         # Ensure document_id is included
         if "document_id" not in data:
@@ -1097,6 +1223,11 @@ class RAGFlowConnector:
         chunk_id: str,
         content: str | None = None,
         keywords: list[str] | None = None,
+        dataset_id: str | None = None,
+        document_id: str | None = None,
+        questions: list[str] | None = None,
+        available: bool | None = None,
+        positions: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Update a chunk's content and/or keywords.
 
@@ -1104,6 +1235,13 @@ class RAGFlowConnector:
             chunk_id: ID of the chunk to update (required).
             content: New content for the chunk.
             keywords: New keywords for the chunk.
+            dataset_id: ID of the dataset that owns the chunk. Required by
+                RAGFlow v1, which addresses chunks by their full path.
+            document_id: ID of the document that owns the chunk. Required by
+                RAGFlow v1.
+            questions: New question keywords for the chunk.
+            available: Whether the chunk is available for retrieval.
+            positions: New positions of the chunk inside the document.
 
         Returns:
             Dictionary containing the updated chunk with:
@@ -1116,19 +1254,54 @@ class RAGFlowConnector:
             RAGFlowConnectionError: If connection fails.
             RAGFlowAPIError: If API returns an error.
         """
-        payload: dict[str, Any] = {}
+        if dataset_id and document_id:
+            # RAGFlow v1: PATCH /datasets/{ds}/documents/{doc}/chunks/{chunk}
+            payload: dict[str, Any] = {}
 
-        if content is not None:
-            payload["content"] = content
-        if keywords is not None:
-            payload["keywords"] = keywords
+            if content is not None:
+                payload["content"] = content
+            if keywords is not None:
+                payload["important_keywords"] = keywords
+            if questions is not None:
+                payload["questions"] = questions
+            if available is not None:
+                payload["available"] = available
+            if positions is not None:
+                payload["positions"] = positions
 
-        logger.debug("Updating chunk %s: %s", chunk_id, list(payload.keys()))
+            logger.debug(
+                "Updating chunk %s in %s/%s: %s",
+                chunk_id,
+                dataset_id,
+                document_id,
+                list(payload.keys()),
+            )
 
-        response = await self.put(f"/chunks/{chunk_id}", json=payload)
+            response = await self.patch(
+                f"/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}",
+                json=payload,
+            )
+        else:
+            # Older servers update a chunk by its id alone.
+            payload = {}
+
+            if content is not None:
+                payload["content"] = content
+            if keywords is not None:
+                payload["keywords"] = keywords
+
+            logger.debug("Updating chunk %s: %s", chunk_id, list(payload.keys()))
+
+            response = await self.put(f"/chunks/{chunk_id}", json=payload)
 
         # Extract data from response
-        data = response.get("data", {})
+        data = _as_dict(response.get("data"))
+
+        # RAGFlow v1 answers a chunk update with a null payload and a
+        # message; report that instead of an empty result.
+        message = response.get("message")
+        if not data and message:
+            data = {"id": chunk_id, "success": True, "message": message}
 
         # Ensure chunk_id is included
         if "id" not in data:
@@ -1158,16 +1331,41 @@ class RAGFlowConnector:
         """
         logger.debug("Deleting chunk: %s from document %s", chunk_id, document_id)
 
-        # RAGFlow uses bulk DELETE endpoint with ids in body
-        response = await self.delete(
-            f"/datasets/{dataset_id}/documents/{document_id}/chunks",
-            json={"ids": [chunk_id]}
-        )
+        # RAGFlow uses a bulk DELETE endpoint. v1 expects `chunk_ids`, older
+        # servers expect `ids`.
+        response = await self._delete_chunks(dataset_id, document_id, [chunk_id])
 
         return {
             "success": True,
             "message": response.get("message", "Chunk deleted successfully"),
         }
+
+    async def _delete_chunks(
+        self,
+        dataset_id: str,
+        document_id: str,
+        chunk_ids: list[str],
+    ) -> dict[str, Any]:
+        """Delete chunks through the bulk endpoint of both server generations.
+
+        RAGFlow v1 expects `chunk_ids` in the request body, older servers
+        expect `ids`. The v1 form is sent first and the legacy form is used
+        when the server rejects it.
+        """
+        path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
+        try:
+            return await self.delete(path, json={"chunk_ids": chunk_ids})
+        except RAGFlowAPIError as exc:
+            message = str(exc).lower()
+            legacy_markers = (
+                "either chunk_ids or delete_all must be provided",
+                "ids is required",
+                "unknown field",
+            )
+            if not any(marker in message for marker in legacy_markers):
+                raise
+            logger.info("Retrying chunk deletion with the legacy `ids` field")
+            return await self.delete(path, json={"ids": chunk_ids})
 
     async def delete_chunks_batch(
         self,
@@ -1194,10 +1392,7 @@ class RAGFlowConnector:
         """
         logger.debug("Deleting chunks batch: %s", chunk_ids)
 
-        response = await self.delete(
-            f"/datasets/{dataset_id}/documents/{document_id}/chunks",
-            json={"ids": chunk_ids}
-        )
+        response = await self._delete_chunks(dataset_id, document_id, chunk_ids)
 
         return {
             "success": True,
